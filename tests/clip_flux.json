@@ -12,7 +12,8 @@
       "cookbook": "cb",
       "recipe": "clip_flux",
       "params": {
-        "ran": "[500,550]",
+        "zem": 2.726,
+        "ran": "[400,450]",
         "smooth_len": "400",
         "kappa": 2,
         "fudge": "auto",

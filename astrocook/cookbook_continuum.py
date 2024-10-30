@@ -2,6 +2,7 @@ from .cookbook_continuum_old import CookbookContinuumOld
 from .functions import running_mean
 from .message import *
 from .utils import parse_range
+from .vars import xem_d
 
 import astropy.constants as ac
 import astropy.table as at
@@ -14,11 +15,14 @@ class CookbookContinuum(CookbookContinuumOld):
         super(CookbookContinuum, self).__init__()
 
 
-    def clip_flux(self, ran='all', smooth_len=400, kappa=2, fudge='auto',
+    def clip_flux(self, zem, ran='all', smooth_len=400, kappa=2, fudge='auto',
                   knots_dist=2000, mode='update'):
+
+
         """ @brief Clip flux
         @details Estimate the continuum by clipping absorbers.
         @url continuum_cb.html#clip-flux
+        @param zem Emission redshift
         @param ran Wavelength range (nm)
         @param smooth_len Smoothing length (km/s)
         @param kappa Number of sigma to reject absorber
@@ -29,6 +33,7 @@ class CookbookContinuum(CookbookContinuumOld):
         """
 
         try:
+            zem = float(zem)
             xmin, xmax = parse_range(ran)
             smooth_len = float(smooth_len)
             fudge = None if fudge=='auto' else float(fudge)
@@ -47,62 +52,116 @@ class CookbookContinuum(CookbookContinuumOld):
         spec = self.sess.spec
         dv = spec._dv()
 
-        # Extract range
-        xsel = np.logical_and(spec._t['x']>xmin, spec._t['x']<xmax)
-        xsels = np.where(xsel==1)[0][0]
-        spec_t = spec._t[xsel]
+        prox = 10000 * au.km/au.s
+        lya_obs = xem_d['Ly_a']*(1+zem)
+        lambda_binning = (lya_obs*(1-prox/ac.c)).value
 
-        # Prepare columns
+        # Extract range total
+        xsel_tot = np.logical_and(spec._t['x']>xmin, spec._t['x']<xmax)
+        spec_t_tot = spec._t[xsel_tot]
+
+        exclude_criteria = spec_t_tot['y'] <= 3. * spec_t_tot['dy']
+        #xsel_rej = np.logical_and(xsel_tot, ~exclude_criteria)
+        xsel_rej = ~exclude_criteria
+        spec_t_rej = spec_t_tot[xsel_rej]
+
+        # Normalize to template
+        #x_template, y_template = np.genfromtxt("/home/elena/azores2024/data/QSO_composite.dat", unpack=True, usecols=(0,1))
+        #x_template = (x_template/10.)* (1.+redshift)
+        #template_interpolation = interpolate.interp1d(x_template, y_template)
+        #y_interp = template_interpolation(spec_t_rej['x'])
+        #y_interp_cont = template_interpolation(spec_t_tot['x'])
+        y_interp = 1
+        y_interp_cont = 1
+        spec_t_rej['y'] /= y_interp
+        spec_t_rej['dy'] /= y_interp
+        dv = dv[xsel_tot][xsel_rej]
+
+
+        # Extract ranges
+        xsel_before = np.logical_and(spec_t_rej['x']>xmin, spec_t_rej['x']<lambda_binning)
+        #xsel_before = np.logical_and(xsel_before,~exclude_criteria)
+        xsel_after = np.logical_and(spec_t_rej['x']>lambda_binning, spec_t_rej['x']<xmax)
+        #xsel_after = np.logical_and(xsel_after,~exclude_criteria)
+
+        intervals = []
+        if np.sum(xsel_before)>0:
+            xsels_before = np.where(xsel_before==1)[0][0]
+            spec_t_before = spec_t_rej[xsel_before]
+            intervals.append((xsel_before, xsels_before, spec_t_before, 5000))
+
+        if np.sum(xsel_after)>0:
+            xsels_after = np.where(xsel_after==1)[0][0]
+            spec_t_after = spec_t_rej[xsel_after]
+            intervals.append((xsel_after, xsels_after, spec_t_after, 400))
+
+        #l'ultimo valore è il valore dello smoothing nei due diversi intervalli, prima della foresta e dopo la foresta
+        #intervals = [(xsel_before, xsels_before, spec_t_before, 5000),
+        #             (xsel_after, xsels_after, spec_t_after, 400)]
+
         if 'mask_abs' not in spec._t.colnames:
             logging.info("I'm adding column `mask_abs`.")
         if 'cont' not in spec._t.colnames:
             logging.info("I'm adding column `cont`.")
-        if mode=='replace' or 'mask_abs' not in spec._t.colnames:
+        if mode == 'replace' or 'mask_abs' not in spec._t.colnames:
             spec._t['mask_abs'] = at.Column(np.zeros(len(spec._t)), dtype=int)
-        else:
-            spec._t['mask_abs'][xsel] = 0
-        if mode=='replace' or 'cont' not in spec._t.colnames:
+        if mode == 'replace' or 'cont' not in spec._t.colnames:
             spec._t['cont'] = at.Column(np.array(None, ndmin=1), dtype=float)
 
+        x_rm = np.array([])
+        y_rm = np.array([])
+        sel_tot = np.array([])
+        for xsel, xsels, spec_t, smooth_len_local in intervals:
 
-        # Compute running median
-        hwindow = int(smooth_len/np.min(dv[xsel]))//8
-        y_rm = running_mean(spec_t['y'], h=hwindow)
+            # Compute running median
+            hwindow = int(smooth_len_local/np.min(dv[xsel]))//8
 
-        # Clip flux
-        sum_sel = len(spec_t)
-        sel = np.zeros(len(spec_t), dtype=bool)
-        for i in range(maxiter):
+            import matplotlib.pyplot as plt
+            plt.plot(spec_t['x'], spec_t['y'])
+            #plt.show()
+            y_rm_interval = running_mean(spec_t['y'], h=hwindow)
+            # Clip flux
+            sum_sel = len(spec_t)
+            sel = np.zeros(len(spec_t), dtype=bool)
+            for i in range(maxiter):
+                sel[~sel] = spec_t['y'][~sel]-y_rm_interval<-kappa*spec_t['dy'][~sel]
+                selw = np.where(sel==1)[0]+xsels
+                spec._t['mask_abs'][selw] = np.ones(len(selw))
+                x_rm_interval = spec_t['x'][~sel]
+                y_rm_interval = running_mean((spec_t['y'])[~sel], h=hwindow)
 
-            sel[~sel] = spec_t['y'][~sel]-y_rm<-kappa*spec_t['dy'][~sel]
-            selw = np.where(sel==1)[0]+xsels
-            spec._t['mask_abs'][selw] = np.ones(len(selw))
-            x_rm = spec_t['x'][~sel]
-            y_rm = running_mean(spec_t['y'][~sel], h=hwindow)
+                if i == maxiter-1 and sum_sel != np.sum(sel):
+                    logging.warning("Clipping not converged after {} iterations! "\
+                                    .format(i+1))
+                if sum_sel != np.sum(sel):
+                    sum_sel = np.sum(sel)
 
-            if i == maxiter-1 and sum_sel != np.sum(sel):
-                logging.warning("Clipping not converged after {} iterations! "\
-                                .format(i+1))
-            if sum_sel != np.sum(sel):
-                sum_sel = np.sum(sel)
-            else:
-                logging.info("Clipping converged after %i iterations." % (i+1))
-                break
+                else:
+                    logging.info("Clipping converged after %i iterations." % (i+1))
+                    break
+            x_rm = np.append(x_rm, x_rm_interval)
+            y_rm = np.append(y_rm, y_rm_interval)
+            sel_tot = np.append(sel_tot,sel)
+
 
         # Compute fudge if `auto` and apply it
+
+        #"""
         if fudge is None:
-            diff = running_mean(spec_t['y'][~sel]-y_rm, hwindow)
+            diff = running_mean(spec_t_rej['y'][np.logical_not(sel_tot)]-y_rm, hwindow)
             fudge = 1+diff/y_rm
         y_rm *= fudge
+        #"""
+        cont_temp = np.interp(spec._t['x'][xsel_tot], x_rm, y_rm)*spec_t_tot['y'].unit
 
-        cont_temp = np.interp(spec._t['x'][xsel], x_rm, y_rm)*spec_t['y'].unit
+        cont_temp*=y_interp_cont
 
         # Update old continuum
         if mode=='update' and 'cont' in spec._t.colnames:
             cont_old = spec._t['cont']
         else:
             cont_old = np.array([np.nan]*len(spec._t))
-        cont_old[xsel] = cont_temp
+        cont_old[xsel_tot] = cont_temp
         spec._t['cont_old'] = cont_old
         spec._gauss_convolve(std=smooth_len, input_col='cont_old',
                              output_col='cont')
