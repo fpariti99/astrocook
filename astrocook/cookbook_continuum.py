@@ -15,8 +15,8 @@ class CookbookContinuum(CookbookContinuumOld):
         super(CookbookContinuum, self).__init__()
 
 
-    def clip_flux(self, zem, ran='all', smooth_len=400, kappa=2, fudge='auto',
-                  knots_dist=2000, mode='update'):
+    def clip_flux(self, zem, ran='all', smooth_len_lya=5000, smooth_len_out=400,
+                  kappa=2, fudge='auto', knots_dist=2000, mode='update'):
 
 
         """ @brief Clip flux
@@ -24,7 +24,8 @@ class CookbookContinuum(CookbookContinuumOld):
         @url continuum_cb.html#clip-flux
         @param zem Emission redshift
         @param ran Wavelength range (nm)
-        @param smooth_len Smoothing length (km/s)
+        @param smooth_len_lya Smoothing length in the Lyman alpha forest (km/s)
+        @param smooth_len_out Smoothing length outside the Lyman alpha forest (km/s)
         @param kappa Number of sigma to reject absorber
         @param fudge Fudge factor to scale the continuum
         @param knots_dist Distance between knots (km/s)
@@ -35,7 +36,8 @@ class CookbookContinuum(CookbookContinuumOld):
         try:
             zem = float(zem)
             xmin, xmax = parse_range(ran)
-            smooth_len = float(smooth_len)
+            smooth_len_lya = float(smooth_len_lya)
+            smooth_len_out = float(smooth_len_out)
             fudge = None if fudge=='auto' else float(fudge)
             kappa = float(kappa)
             knots_dist = float(knots_dist)
@@ -54,7 +56,7 @@ class CookbookContinuum(CookbookContinuumOld):
 
         prox = 10000 * au.km/au.s
         lya_obs = xem_d['Ly_a']*(1+zem)
-        lambda_binning = (lya_obs*(1-prox/ac.c)).value
+        lya_prox = (lya_obs*(1-prox/ac.c)).value
 
         # Extract range total
         xsel_tot = np.logical_and(spec._t['x']>xmin, spec._t['x']<xmax)
@@ -79,32 +81,34 @@ class CookbookContinuum(CookbookContinuumOld):
 
 
         # Extract ranges
-        xsel_before = np.logical_and(spec_t_rej['x']>xmin, spec_t_rej['x']<lambda_binning)
+        xpad_before = np.logical_and(spec._t['x']>xmin, spec._t['x']<lya_prox)
+        xsel_before = np.logical_and(spec_t_rej['x']>xmin, spec_t_rej['x']<lya_prox)
         #xsel_before = np.logical_and(xsel_before,~exclude_criteria)
-        xsel_after = np.logical_and(spec_t_rej['x']>lambda_binning, spec_t_rej['x']<xmax)
+        xpad_after = np.logical_and(spec._t['x']>lya_prox, spec._t['x']<xmax)
+        xsel_after = np.logical_and(spec_t_rej['x']>lya_prox, spec_t_rej['x']<xmax)
         #xsel_after = np.logical_and(xsel_after,~exclude_criteria)
 
         intervals = []
         if np.sum(xsel_before)>0:
-            xsels_before = np.where(xsel_before==1)[0][0]
+            xsels_before = np.where(xpad_before==1)[0][0]
             spec_t_before = spec_t_rej[xsel_before]
-            intervals.append((xsel_before, xsels_before, spec_t_before, 5000))
+            intervals.append((xsel_before, xsels_before, spec_t_before, smooth_len_lya))
 
         if np.sum(xsel_after)>0:
-            xsels_after = np.where(xsel_after==1)[0][0]
+            xsels_after = np.where(xpad_after==1)[0][0]
             spec_t_after = spec_t_rej[xsel_after]
-            intervals.append((xsel_after, xsels_after, spec_t_after, 400))
+            intervals.append((xsel_after, xsels_after, spec_t_after, smooth_len_out))
 
         #l'ultimo valore è il valore dello smoothing nei due diversi intervalli, prima della foresta e dopo la foresta
         #intervals = [(xsel_before, xsels_before, spec_t_before, 5000),
         #             (xsel_after, xsels_after, spec_t_after, 400)]
 
-        if 'mask_abs' not in spec._t.colnames:
-            logging.info("I'm adding column `mask_abs`.")
+        if 'mask_unabs' not in spec._t.colnames:
+            logging.info("I'm adding column `mask_unabs`.")
         if 'cont' not in spec._t.colnames:
             logging.info("I'm adding column `cont`.")
-        if mode == 'replace' or 'mask_abs' not in spec._t.colnames:
-            spec._t['mask_abs'] = at.Column(np.zeros(len(spec._t)), dtype=int)
+        if mode == 'replace' or 'mask_unabs' not in spec._t.colnames:
+            spec._t['mask_unabs'] = at.Column(np.zeros(len(spec._t)), dtype=int)
         if mode == 'replace' or 'cont' not in spec._t.colnames:
             spec._t['cont'] = at.Column(np.array(None, ndmin=1), dtype=float)
 
@@ -125,8 +129,7 @@ class CookbookContinuum(CookbookContinuumOld):
             sel = np.zeros(len(spec_t), dtype=bool)
             for i in range(maxiter):
                 sel[~sel] = spec_t['y'][~sel]-y_rm_interval<-kappa*spec_t['dy'][~sel]
-                selw = np.where(sel==1)[0]+xsels
-                spec._t['mask_abs'][selw] = np.ones(len(selw))
+                selw = np.where(sel==1)[0]#+xsels
                 x_rm_interval = spec_t['x'][~sel]
                 y_rm_interval = running_mean((spec_t['y'])[~sel], h=hwindow)
 
@@ -143,6 +146,8 @@ class CookbookContinuum(CookbookContinuumOld):
             y_rm = np.append(y_rm, y_rm_interval)
             sel_tot = np.append(sel_tot,sel)
 
+        _, _, mask_unabs = np.intersect1d(x_rm, spec._t['x'], return_indices=True)
+        spec._t['mask_unabs'][mask_unabs] = np.ones(len(mask_unabs))
 
         # Compute fudge if `auto` and apply it
 
@@ -163,7 +168,7 @@ class CookbookContinuum(CookbookContinuumOld):
             cont_old = np.array([np.nan]*len(spec._t))
         cont_old[xsel_tot] = cont_temp
         spec._t['cont_old'] = cont_old
-        spec._gauss_convolve(std=smooth_len, input_col='cont_old',
+        spec._gauss_convolve(std=smooth_len_out, input_col='cont_old',
                              output_col='cont')
         spec._t.remove_column('cont_old')
 

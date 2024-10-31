@@ -13,8 +13,7 @@
       "recipe": "clip_flux",
       "params": {
         "zem": 2.726,
-        "ran": "[400,450]",
-        "smooth_len": "400",
+        "ran": "[400,550]",
         "kappa": 2,
         "fudge": "auto",
         "knots_dist": "5000",
@@ -42,7 +41,7 @@
       "cookbook": "_dlg_mini_graph",
       "recipe": "_set_elem",
       "params": {
-        "value": "SESS_SEL,spec,x,y,None,step,-,0.5,black,1\nSESS_SEL,spec,x,y,mask_abs,step,-,2,red,1\nSESS_SEL,spec,x,cont,None,plot,-,1,blue,1\nSESS_SEL,nodes,x,y,None,scatter,o,1,blue,1\n",
+        "value": "SESS_SEL,spec,x,y,None,step,-,0.5,black,1\nSESS_SEL,spec,x,y,mask_unabs,step,-,2,red,1\nSESS_SEL,spec,x,cont,None,plot,-,1,blue,1\nSESS_SEL,nodes,x,y,None,scatter,o,1,blue,1\n",
         "log": false
       }
     },
