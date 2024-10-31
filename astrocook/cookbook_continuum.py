@@ -2,11 +2,12 @@ from .cookbook_continuum_old import CookbookContinuumOld
 from .functions import running_mean
 from .message import *
 from .utils import parse_range
-from .vars import xem_d
+from .vars import qso_composite, xem_d
 
 import astropy.constants as ac
 import astropy.table as at
 import astropy.units as au
+from scipy.interpolate import interp1d
 import logging
 
 class CookbookContinuum(CookbookContinuumOld):
@@ -68,25 +69,20 @@ class CookbookContinuum(CookbookContinuumOld):
         spec_t_rej = spec_t_tot[xsel_rej]
 
         # Normalize to template
-        #x_template, y_template = np.genfromtxt("/home/elena/azores2024/data/QSO_composite.dat", unpack=True, usecols=(0,1))
-        #x_template = (x_template/10.)* (1.+redshift)
-        #template_interpolation = interpolate.interp1d(x_template, y_template)
-        #y_interp = template_interpolation(spec_t_rej['x'])
-        #y_interp_cont = template_interpolation(spec_t_tot['x'])
-        y_interp = 1
-        y_interp_cont = 1
+        x_template = (qso_composite['x']/10.)* (1.+zem)
+        y_template = qso_composite['y']
+        template_interpolation = interp1d(x_template, y_template)
+        y_interp = template_interpolation(spec_t_rej['x'])
+        y_interp_cont = template_interpolation(spec_t_tot['x'])
         spec_t_rej['y'] /= y_interp
         spec_t_rej['dy'] /= y_interp
         dv = dv[xsel_tot][xsel_rej]
 
-
         # Extract ranges
         xpad_before = np.logical_and(spec._t['x']>xmin, spec._t['x']<lya_prox)
         xsel_before = np.logical_and(spec_t_rej['x']>xmin, spec_t_rej['x']<lya_prox)
-        #xsel_before = np.logical_and(xsel_before,~exclude_criteria)
         xpad_after = np.logical_and(spec._t['x']>lya_prox, spec._t['x']<xmax)
         xsel_after = np.logical_and(spec_t_rej['x']>lya_prox, spec_t_rej['x']<xmax)
-        #xsel_after = np.logical_and(xsel_after,~exclude_criteria)
 
         intervals = []
         if np.sum(xsel_before)>0:
@@ -98,10 +94,6 @@ class CookbookContinuum(CookbookContinuumOld):
             xsels_after = np.where(xpad_after==1)[0][0]
             spec_t_after = spec_t_rej[xsel_after]
             intervals.append((xsel_after, xsels_after, spec_t_after, smooth_len_out))
-
-        #l'ultimo valore è il valore dello smoothing nei due diversi intervalli, prima della foresta e dopo la foresta
-        #intervals = [(xsel_before, xsels_before, spec_t_before, 5000),
-        #             (xsel_after, xsels_after, spec_t_after, 400)]
 
         if 'mask_unabs' not in spec._t.colnames:
             logging.info("I'm adding column `mask_unabs`.")
