@@ -17,7 +17,8 @@ class CookbookContinuum(CookbookContinuumOld):
 
 
     def clip_flux(self, zem, ran='all', smooth_len_lya=5000, smooth_len_out=400,
-                  kappa=2, fudge='auto', knots_dist=2000, mode='update'):
+                  kappa=2, template=False, fudge='auto', knots_dist=2000,
+                  mode='update'):
 
 
         """ @brief Clip flux
@@ -28,6 +29,7 @@ class CookbookContinuum(CookbookContinuumOld):
         @param smooth_len_lya Smoothing length in the Lyman alpha forest (km/s)
         @param smooth_len_out Smoothing length outside the Lyman alpha forest (km/s)
         @param kappa Number of sigma to reject absorber
+        @param template Use a composite spectrum to reduce the Lyman alpha emission peak
         @param fudge Fudge factor to scale the continuum
         @param knots_dist Distance between knots (km/s)
         @param mode Update or replace
@@ -39,8 +41,9 @@ class CookbookContinuum(CookbookContinuumOld):
             xmin, xmax = parse_range(ran)
             smooth_len_lya = float(smooth_len_lya)
             smooth_len_out = float(smooth_len_out)
-            fudge = None if fudge=='auto' else float(fudge)
             kappa = float(kappa)
+            template = str(template) == 'True'
+            fudge = None if fudge=='auto' else float(fudge)
             knots_dist = float(knots_dist)
             mode = str(mode)
         except:
@@ -55,7 +58,7 @@ class CookbookContinuum(CookbookContinuumOld):
         spec = self.sess.spec
         dv = spec._dv()
 
-        prox = 10000 * au.km/au.s
+        prox = 5000 * au.km/au.s
         lya_obs = xem_d['Ly_a']*(1+zem)
         lya_prox = (lya_obs*(1-prox/ac.c)).value
 
@@ -69,13 +72,15 @@ class CookbookContinuum(CookbookContinuumOld):
         spec_t_rej = spec_t_tot[xsel_rej]
 
         # Normalize to template
-        x_template = (qso_composite['x']/10.)* (1.+zem)
-        y_template = qso_composite['y']
-        template_interpolation = interp1d(x_template, y_template)
-        y_interp = template_interpolation(spec_t_rej['x'])
-        y_interp_cont = template_interpolation(spec_t_tot['x'])
-        spec_t_rej['y'] /= y_interp
-        spec_t_rej['dy'] /= y_interp
+        if template:
+            x_template = (qso_composite['x']/10.)* (1.+zem)
+            y_template = qso_composite['y']
+            template_interpolation = interp1d(x_template, y_template)
+            y_interp = template_interpolation(spec_t_rej['x'])
+            y_interp_cont = template_interpolation(spec_t_tot['x'])
+            spec_t_rej['y'] /= y_interp
+            spec_t_rej['dy'] /= y_interp
+
         dv = dv[xsel_tot][xsel_rej]
 
         # Extract ranges
@@ -151,7 +156,7 @@ class CookbookContinuum(CookbookContinuumOld):
         #"""
         cont_temp = np.interp(spec._t['x'][xsel_tot], x_rm, y_rm)*spec_t_tot['y'].unit
 
-        cont_temp*=y_interp_cont
+        if template: cont_temp*=y_interp_cont
 
         # Update old continuum
         if mode=='update' and 'cont' in spec._t.colnames:
