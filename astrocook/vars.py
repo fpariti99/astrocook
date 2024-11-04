@@ -161,6 +161,7 @@ zero_point_skymap = {'u': 29.005687, 'v': 28.481306, 'g': 29.55393973,
 
 p = '/'.join(pathlib.PurePath(os.path.realpath(__file__)).parts[0:-1]) + '/../'
 atom_par = ascii.read(pathlib.Path(p+'/atom_par.dat'))
+qso_composite = ascii.read(pathlib.Path(p+'/qso_composite.dat'))
 inoue = ascii.read(pathlib.Path(p+'/table2_inoue.dat'))
 xem_d = {k: v*au.nm for (k, v) in atom_par['col1', 'col2']}
 fosc_d = {k: v for (k, v) in atom_par['col1', 'col3']}
