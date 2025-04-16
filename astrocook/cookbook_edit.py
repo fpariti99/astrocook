@@ -25,7 +25,7 @@ class CookbookEdit(CookbookEditOld):
 
     def import_systs(self, source=0, mode='replace'):
         """@brief Import system list
-        @details Import the system list into the currently selected session.
+        @details Import a system list into the currently selected session.
         @url edit_cb.html#import-system-list
         @param source Source session
         @param mode Mode (replace or append)
@@ -40,7 +40,52 @@ class CookbookEdit(CookbookEditOld):
 
         struct = source+',systs'
         return self.struct_import(struct, mode)
+    
+    
+    def import_telluric(self, source=0, col='telluric_model', merge_cont=True):
+        """@brief Import telluric model
+        @details Import a telluric model into the currently selected session 
+        and optionally merge it into the continuum.
+        @url edit_cb.html#import-telluric-model
+        @param source Source session
+        @param col Telluric model column
+        @param merge_cont Merge telluric model into continuum
+        @return 0
+        """
+        
+        try:
+            source = str(source)
+            col = str(col)
+            merge_cont = str(merge_cont) == 'True'
+        except:
+            logging.error(msg_param_fail)
+            return 0
+        
+        struct = source+',spec,'+col
+        
+        _, model, _ = self._struct_parse(struct, length=3)
+        t = self.sess.spec._t
+        
+        
+        if len(t)!=len(model):
+            logging.error("I cannot import the telluric model. The spectrum "
+                          "table has a different length.")
+            return 0
 
+        logging.info("Creating column `telluric_model`...")
+        t['telluric_model'] = model
+        if merge_cont and 'cont' in t.colnames:
+            logging.info("Merging the telluric model with the continuum...")
+            if 'cont_no_telluric' not in t.colnames:
+                logging.info("Creating column `cont_no_telluric` to store the" 
+                             "existing continuum...")
+                t['cont_no_telluric'] = t['cont']
+            t['cont'] *= t['telluric_model']
+        elif merge_cont and 'cont' not in t.colnames:
+            logging.warning("I cannot merge the model with the continuum: "
+                            "continuum not found.")
+        return 0
+        
 
     def extract(self):
         """@brief Extract 🚧

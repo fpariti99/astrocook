@@ -339,6 +339,10 @@ class Format(object):
             y = data['FLUX_CAL'][0]/(xmax-xmin)
             dy = data['ERR_CAL'][0]/(xmax-xmin)
             yunit = au.erg/au.cm**2/au.s/au.nm
+        elif 'flux_cal' in data.colnames:
+            y = data['flux_cal']/(xmax-xmin)
+            dy = data['error_cal']/(xmax-xmin)
+            yunit = au.erg/au.cm**2/au.s/au.nm
         elif 'FLUX_EL' in data.colnames:
             y = data['FLUX_EL'][0]/(xmax-xmin)
             dy = data['ERR_EL'][0]/(xmax-xmin)
@@ -351,7 +355,6 @@ class Format(object):
                 y = data['flux']/(xmax-xmin)
                 dy = data['error']/(xmax-xmin)
             yunit = None
-        resol = []*len(x)
         xunit = au.Angstrom
         meta = hdr #{'instr': 'ESPRESSO'}
         """
@@ -377,17 +380,20 @@ class Format(object):
             y = np.ravel(hdul['SCIDATA'].data[:,span:-span-1])
             dy = np.ravel(hdul['ERRDATA'].data[:,span:-span-1])
             q = np.ravel(hdul['QUALDATA'].data[:,span:-span-1])
+            t = np.ravel(hdul['TELLURIC_CORRECTION'].data[:,span:-span-1])
         elif row is None:
             r = range(slice, hdul['WAVEDATA_VAC_BARY'].data.shape[0], 2)
             x = np.ravel(hdul['WAVEDATA_VAC_BARY'].data[r,span:-span-1])
             y = np.ravel(hdul['SCIDATA'].data[r,span:-span-1])
             dy = np.ravel(hdul['ERRDATA'].data[r,span:-span-1])
             q = np.ravel(hdul['QUALDATA'].data[r,span:-span-1])
+            t = np.ravel(hdul['TELLURIC_CORRECTION'].data[r,span:-span-1])
         else:
             x = hdul['WAVEDATA_VAC_BARY'].data[row,span:-span-1]
             y = hdul['SCIDATA'].data[row,span:-span-1]
             dy = hdul['ERRDATA'].data[row,span:-span-1]
             q = hdul['QUALDATA'].data[row,span:-span-1]
+            t = hdul['TELLURIC_CORRECTION'].data[row,span:-span-1]
 
 
 
@@ -397,11 +403,12 @@ class Format(object):
         y = y[w]/(xmax-xmin)#*10#au.nm/au.Angstrom
         dy = dy[w]/(xmax-xmin)#*10#au.nm/au.Angstrom
         q = q[w]
+        t = t[w]
         argsort = np.argsort(x)
-        x,xmin,xmax,y,dy,q = x[argsort],xmin[argsort],xmax[argsort],y[argsort],dy[argsort],q[argsort]
+        x,xmin,xmax,y,dy,q,t = x[argsort],xmin[argsort],xmax[argsort],y[argsort],dy[argsort],q[argsort],t[argsort]
 
         w = np.where(q<1) #4**7)
-        x,xmin,xmax,y,dy,q = x[w],xmin[w],xmax[w],y[w],dy[w],q[w]
+        x,xmin,xmax,y,dy,q,t = x[w],xmin[w],xmax[w],y[w],dy[w],q[w],t[w]
 
         resol = []*len(x)
         xunit = au.Angstrom
@@ -409,6 +416,7 @@ class Format(object):
         meta = hdr
         spec = Spectrum(x, xmin, xmax, y, dy, xunit, yunit, meta)
         spec._t['quality'] = q
+        spec._t['telluric_correction'] = t
         return spec
 
 
@@ -474,7 +482,7 @@ class Format(object):
             return None
 
 
-    def generic_spectrum(self, sess, hdul):
+    def generic_spectrum(self, sess, hdul, extnum=1):
         """ Generic spectrum """
         logging.info(msg_format('generic'))
         hdr = hdul[0].header
@@ -492,12 +500,13 @@ class Format(object):
                     cont = []
                     data = None
                 else:
-                    data_s = hdul[1].data
+                    data_s = hdul[extnum].data
                     data = Table(data_s)
                     x_name = self._col_name(data, 'x')
                     y_name = self._col_name(data, 'y')
                     dy_name = self._col_name(data, 'dy')
                     cont_name = self._col_name(data, 'cont')
+                    print(x_name, y_name, dy_name, cont_name)
 
                     try:
                         x = np.ravel(data[x_name])

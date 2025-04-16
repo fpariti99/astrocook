@@ -7,6 +7,7 @@ from .vars import qso_composite, xem_d
 import astropy.constants as ac
 import astropy.table as at
 import astropy.units as au
+from copy import deepcopy as dc
 from scipy.interpolate import interp1d
 import logging
 
@@ -25,7 +26,7 @@ class CookbookContinuum(CookbookContinuumOld):
         @details Estimate the continuum by clipping absorbers.
         @url continuum_cb.html#clip-flux
         @param zem Emission redshift
-        @param ran Wavelength range (nm)
+        @param ran Wavelength range (nm, e.g. [450,500]; `all` will select all the available range)
         @param smooth_len_lya Smoothing length in the Lyman alpha forest (km/s)
         @param smooth_len_out Smoothing length outside the Lyman alpha forest (km/s)
         @param kappa Number of sigma to reject absorber
@@ -35,7 +36,7 @@ class CookbookContinuum(CookbookContinuumOld):
         @param mode Update or replace
         @return 0
         """
-
+        
         try:
             zem = float(zem)
             xmin, xmax = parse_range(ran)
@@ -53,9 +54,20 @@ class CookbookContinuum(CookbookContinuumOld):
         if mode not in ['update', 'replace']:
             logging.warning("I cannot understand the mode. I will use `update`.")
 
+
         maxiter = 1000
 
         spec = self.sess.spec
+
+        if 'cont_no_telluric' in spec._t.colnames:
+            logging.info("An existing continuum included a telluric model. "
+                         "I'm updating the continuum without changing the "
+                         "telluric model.")
+            spec._t['telluric'] = spec._t['cont']/spec._t['cont_no_telluric']
+            spec._t['cont_telluric'] = spec._t['cont']
+            spec._t['cont'] = spec._t['cont_no_telluric']
+
+
         dv = spec._dv()
 
         prox = 5000 * au.km/au.s
@@ -177,6 +189,12 @@ class CookbookContinuum(CookbookContinuumOld):
 
         # Extract nodes
         self.nodes_extract(delta_x=knots_dist, mode='cont')
+
+ 
+        if 'cont_no_telluric' in spec._t.colnames:
+            spec._t['cont_no_telluric'] = spec._t['cont']
+            spec._t['cont'] = spec._t['cont']*spec._t['telluric']
+            spec._t.remove_columns(['cont_telluric', 'telluric'])
 
         return 0
 

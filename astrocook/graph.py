@@ -166,6 +166,8 @@ class Graph(object):
                 if focus == self._gui._graph_main:
                     title.append('Extract region')
                     attr.append('region_extract')
+                    title.append('Mask region')
+                    attr.append('region_mask')
                     title.append('Zap feature')
                     attr.append('spec_zap')
 
@@ -189,7 +191,7 @@ class Graph(object):
             for k in self._axes:
                 if self._axes[k] == event.inaxes:
                     ax = self._axes[k]
-                    dx = aconst.c*(xem_d[k]/xem_d[klast]-1)
+                    dx = aconst.c.to(au.km/au.s)*np.log(xem_d[k]/xem_d[klast])
         else:
             ax = self._ax
             dx = 0*au.nm
@@ -276,6 +278,8 @@ class Graph(object):
 
     def _refresh(self, sess, logx=False, logy=False, norm=False, legend=None,
                  xlim=None, ylim=None, title=None, text=None, init_cursor=False):
+
+        xlim_old, ylim_old = self._ax.get_xlim(), self._ax.get_ylim()
 
         sess = np.array(sess, ndmin=1)
         #import datetime as dt
@@ -366,6 +370,11 @@ class Graph(object):
                 elif ls[-1]!='auto':
                     logging.error(msg_lim(ls[0]))
 
+        
+        if xlim is None and xlim_old != (0,1): xlim = xlim_old
+        if ylim is None and ylim_old != (0,1): ylim = ylim_old
+
+
         if xlim is not None and not autoxlim:
             self._ax.set_xlim(xlim)
         if ylim is not None and not autoylim:
@@ -382,7 +391,7 @@ class Graph(object):
                 trans = transforms.blended_transform_factory(
                             self._ax.transData, self._ax.transAxes)
                 self._ax.fill_between(x, 0, 1, where=s._shade_where,
-                                      transform=trans, color='C1', alpha=0.2)
+                                      transform=trans, color='C0', alpha=0.2)
 
 
         self._canvas.draw()
