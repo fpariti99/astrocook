@@ -377,6 +377,9 @@ class GUIMenuAbsorbers(GUIMenu):
 
         self._rec = [{'targ': 'find_lines', 'append': 'spec'},
                      '--',
+                     {'targ': 'ew_manual', 'append': 'spec'},
+                      {'targ': 'ew_table', 'append': 'spec'},
+                     '--',
                      {'targ': 'model_lya', 'append': 'cont'},
                      {'targ': 'model_metals', 'append': 'cont'},
                      '--',
