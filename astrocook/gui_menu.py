@@ -377,6 +377,9 @@ class GUIMenuAbsorbers(GUIMenu):
 
         self._rec = [{'targ': 'find_lines', 'append': 'spec'},
                      '--',
+                     {'targ': 'ew_manual', 'append': 'spec'},
+                      {'targ': 'ew_table', 'append': 'spec'},
+                     '--',
                      {'targ': 'model_lya', 'append': 'cont'},
                      {'targ': 'model_metals', 'append': 'cont'},
                      '--',
@@ -464,6 +467,7 @@ class GUIMenuEdit(GUIMenu):
 
         self._rec = [{'targ': 'modify_columns', 'append': 'spec'},
                      {'targ': 'import_systs', 'append': 'spec'},
+                     {'targ': 'import_telluric', 'append': 'spec'},
                      '--',
                      {'targ': 'extract', 'append': 'spec'},
                      {'targ': 'mask', 'append': 'spec'}
