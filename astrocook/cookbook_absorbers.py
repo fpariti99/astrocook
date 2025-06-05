@@ -5,6 +5,9 @@ from .vars import resol_def, xem_d
 
 import logging
 import numpy as np
+import pandas as pd
+from astropy.table import Table
+from astropy import units as au
 from scipy.signal import find_peaks
 
 class CookbookAbsorbers(CookbookAbsorbersOld):
@@ -57,6 +60,204 @@ class CookbookAbsorbers(CookbookAbsorbersOld):
         """
 
         return 0
+
+
+
+
+    def compute_ew(self, x1, x2, rel_err_rmse, rel_err_mad):
+        try:
+           x1 = float(x1)
+           x2 = float(x2)
+           
+
+           if x1 >= x2:
+             raise ValueError("x1 must be less than x2.")
+        except Exception as e:
+             logging.error(f"Error in EW calculation: {str(e)}")
+
+             return None, None, None, None, None  # Ritorna valori nulli in caso di errore
+
+        unit = self.sess.spec._t['x'].unit
+        sel = np.logical_and(np.array(self.sess.spec._t['x']) > x1,
+                         np.array(self.sess.spec._t['x']) < x2)
+
+        
+
+        t = self.sess.spec._t[sel]
+ 
+        if np.any(np.isnan(t['y'])):
+            return np.nan, np.nan, np.nan, np.nan, np.nan
+    
+        dx = (t['xmax'] - t['xmin']).to(unit)
+    
+        ew = np.nansum(dx * (1 - np.array(t['y'] / t['cont'])))  # Calcolo EW
+    
+        # Calcola gli errori del continuo
+        cont_error_rmse = rel_err_rmse * t['cont']
+        cont_error_mad = rel_err_mad * t['cont']
+    
+        # Calcola dEW usando RMSE
+        dEW_rmse = np.nansum((dx * (-1 / t['cont']))**2 * (t['dy']**2 + (cont_error_rmse)**2))
+        dEW_rmse = np.sqrt(dEW_rmse)
+    
+        # Calcola dEW usando MAD
+        dEW_mad = np.nansum((dx * (-1 / t['cont']))**2 * (t['dy']**2 + (cont_error_mad)**2))
+        dEW_mad = np.sqrt(dEW_mad)
+    
+        
+
+        #print(f"DEBUG - Types: EW={type(ew)}, dEW_rmse={type(dEW_rmse)}, dEW_mad={type(dEW_mad)}")
+        #print(f"DEBUG - Values: dEW_rmse={dEW_rmse}, dEW_mad={dEW_mad}")
+
+
+        # Calcola sigma per entrambi i casi
+        sigma_rmse = ew / dEW_rmse if dEW_rmse != 0 else np.nan
+        sigma_mad = ew / dEW_mad if dEW_mad != 0 else np.nan
+ 
+        
+        return ew, dEW_rmse, sigma_rmse, dEW_mad, sigma_mad
+
+    
+
+        
+    
+    def ew_manual(self,row_name, x1,x2):
+        """@brief Compute Equivalent Width from input interval
+        @details Computes the Equivalent Width for the specified range of wavelengths.
+        @param row_name: Insert transition name
+        @param x1: Starting wavelength of the interval
+        @param x2: Ending wavelength of the interval
+        @return The computed EW value or logs an error if inputs are invalid.
+        """
+        
+        x1 = float(x1)
+        x2 = float(x2)
+        
+        ew, dEW, sigma = self.compute_ew(x1, x2)
+        if ew is not None: 
+           unit = self.sess.spec._t['x'].unit
+           logging.info(f"EW for line {row_name} between {x1:.4f} and {x2:.4f} {unit}: {ew:.3e} ± {dEW:.3e} {unit}")
+
+    
+        return 0
+
+
+
+    def ew_table(self, table_path=None):
+        """@brief Compute EW from table
+        @details Compute EW from table using both RMSE and MAD for continuum error estimation.
+        @param table_path: Path to the table containing intervals (optional)
+        """
+        unit = self.sess.spec._t['x'].unit
+        try:
+           try:
+              data = pd.read_csv(table_path, sep=';')
+              if data.shape[1] == 1:
+                  raise ValueError("File letto con una sola colonna, riprovo con ','")
+              print("File caricato con separatore ';'.")
+           except Exception as e:
+                logging.warning(f"Errore con ';': {e}, riprovo con ','...")
+                try:
+                   data = pd.read_csv(table_path, sep=',')
+                   if data.shape[1] == 1:
+                      raise ValueError("Il file sembra ancora errato, controlla il formato.")
+                   print("File caricato con separatore ','.")
+                except Exception as e:
+                    logging.error(f"Errore nel leggere il file CSV: {e}")
+                    return None
+
+           if data.empty:
+               logging.error("Il file CSV è vuoto.")
+               return None
+
+           mode = input("Enter mode (e.g., high or low): ")
+           ew_col_name = f"ew {mode}"
+           dew_rmse_col_name = f"dew_rmse {mode}"
+           dew_mad_col_name = f"dew_mad {mode}"
+           sigma_rmse_col_name = f"sigma_rmse {mode}"
+           sigma_mad_col_name = f"sigma_mad {mode}"
+
+           data[ew_col_name] = None
+           data[dew_rmse_col_name] = None
+           data[dew_mad_col_name] = None
+           data[sigma_rmse_col_name] = None
+           data[sigma_mad_col_name] = None
+
+           if unit == au.nm:
+
+              for index, row in data.iterrows():
+                  row_name = row['Transition']
+                  x1 = row['Observed_Lambda_Min']* au.nm
+                  x2 = row['Observed_Lambda_Max']* au.nm
+
+                  rel_err_rmse = row['Relative_Error_rmse']
+                  rel_err_mad = row['Relative_Error_mad']
+
+                  
+
+                  # 🔴 Stampa i tipi delle variabili per debugging
+                  #print(f"Row {index}: x1={x1} ({type(x1)}), x2={x2} ({type(x2)}), rel_err_rmse={rel_err_rmse} ({type(rel_err_rmse)}), rel_err_mad={rel_err_mad} ({type(rel_err_mad)}) ")
+
+                 
+ 
+                  
+                  ew, dEW_rmse, sigma_rmse, dEW_mad, sigma_mad = self.compute_ew(
+    x1.value, x2.value, rel_err_rmse, rel_err_mad
+)     
+                  # 🔴 Stampa i tipi prima di scriverli nel DataFrame
+                  #print(f"Row {index}: EW={ew} ({type(ew)}), dEW_rmse={dEW_rmse} ({type(dEW_rmse)})")
+
+
+                  if ew is not None:
+                      # 🔴 Stampa i tipi prima di scriverli nel DataFrame
+                      #print(f"Row {index}: EW={ew} ({type(ew)}), dEW_rmse={dEW_rmse} ({type(dEW_rmse)}), dEW_mad={dEW_mad} ({type(dEW_mad)}), sigma_rmse={sigma_rmse} ({type(sigma_rmse)}), sigma_mad={sigma_mad} ({type(sigma_mad)})")
+                      #print(f"Row {index}: dEW_rmse={dEW_rmse}, unit={dEW_rmse.unit}, dEW_mad={dEW_mad}, unit={dEW_mad.unit}")
+
+
+                      data.at[index, ew_col_name] = ew.value if not np.isnan(ew) else np.nan
+                      data.at[index, dew_rmse_col_name] = dEW_rmse.value if not np.isnan(dEW_rmse) else np.nan
+                      data.at[index, dew_mad_col_name] = dEW_mad.value if not np.isnan(dEW_mad) else np.nan
+                      data.at[index, sigma_rmse_col_name] = sigma_rmse.value if not np.isnan(sigma_rmse) else np.nan
+                      data.at[index, sigma_mad_col_name] = sigma_mad.value if not np.isnan(sigma_mad) else np.nan
+
+
+           elif unit == au.angstrom:
+
+              for index, row in data.iterrows():
+                  row_name = row['Transition']
+                  x1 = row['Observed_Lambda_Min'] * unit.nm
+                  x2 = row['Observed_Lambda_Max'] * unit.nm
+                  rel_err_rmse = row['Relative_Error_rmse']
+                  rel_err_mad = row['Relative_Error_mad']
+ 
+                 
+
+                  ew, dEW_rmse, sigma_rmse, dEW_mad, sigma_mad = self.compute_ew(
+    x1.value, x2.value, rel_err_rmse, rel_err_mad
+)
+
+                  if ew is not None:
+                    
+                     data.at[index, ew_col_name] = ew.value
+                     data.at[index, dew_rmse_col_name] = dEW_rmse.value
+                     data.at[index, dew_mad_col_name] = dEW_mad.value
+                     data.at[index, sigma_rmse_col_name] = sigma_rmse.value
+                     data.at[index, sigma_mad_col_name] = sigma_mad.value
+
+           else:
+                 logging.error(f"Unsupported unit for wavelength: {unit}")
+                 return 0
+
+           data.to_csv(table_path, index=False)
+           print(f"Results saved to {table_path}")
+
+        except Exception as e:
+             logging.error(f"Error loading the table: {e}")
+             return 0
+
+        return 1
+    
+   
 
 
     def model_metals(self, series, zem, no_ly=True, use_lines=False):
