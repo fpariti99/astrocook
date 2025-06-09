@@ -147,6 +147,7 @@ class CookbookAbsorbers(CookbookAbsorbersOld):
         """@brief Compute EW from table
         @details Compute EW from table using both RMSE and MAD for continuum error estimation.
         @param table_path: Path to the table containing intervals (optional)
+        @return None
         """
         unit = self.sess.spec._t['x'].unit
         try:
@@ -170,7 +171,17 @@ class CookbookAbsorbers(CookbookAbsorbersOld):
                logging.error("Il file CSV è vuoto.")
                return None
 
-           mode = input("Enter mode (e.g., high or low): ")
+           #mode = input("Enter mode (e.g., high or low): ")
+
+           if 'low' in table_path:
+               mode = 'low'
+           elif 'high' in table_path:
+               mode = 'high'
+           else:
+               logging.error("Mode not recognized.")
+               return None
+           logging.info(f"Mode selected: {mode}")
+
            ew_col_name = f"ew {mode}"
            dew_rmse_col_name = f"dew_rmse {mode}"
            dew_mad_col_name = f"dew_mad {mode}"
@@ -253,9 +264,9 @@ class CookbookAbsorbers(CookbookAbsorbersOld):
 
         except Exception as e:
              logging.error(f"Error loading the table: {e}")
-             return 0
+             return None
 
-        return 1
+        return None
     
    
 
